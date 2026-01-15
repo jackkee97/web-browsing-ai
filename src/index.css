@@ -695,14 +695,14 @@ textarea::placeholder {
 
 .news-card--featured {
   grid-column: span 2;
-  grid-row: span 2;
-  padding: 18px;
+  grid-row: span 1;
+  padding: 14px;
 }
 
 .news-card--headline {
   grid-column: span 2;
-  grid-row: span 3;
-  padding: 20px;
+  grid-row: span 1;
+  padding: 16px;
 }
 
 .news-card--standard {
@@ -726,11 +726,11 @@ textarea::placeholder {
 }
 
 .news-card--featured .news-card__title {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .news-card--headline .news-card__title {
-  font-size: 22px;
+  font-size: 19px;
 }
 
 .news-card--compact .news-card__title {

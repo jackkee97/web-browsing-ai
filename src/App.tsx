@@ -1028,10 +1028,17 @@ export default function App() {
                   </div>
                 )}
                 <div className="news-grid news-grid--masonry">
-                  {pagedStories.map((story) => (
+                  {pagedStories
+                    .reduce<{ story: NewsItem; size: StorySize }[]>((acc, story) => {
+                      const prevSize = acc.length ? acc[acc.length - 1].size : null;
+                      const size = adjustStorySize(story, prevSize);
+                      acc.push({ story, size });
+                      return acc;
+                    }, [])
+                    .map(({ story, size }) => (
                     <article
                       key={`${story.title}-${story.url ?? "story"}`}
-                      className={`news-card ${getStorySize(story)}`}
+                      className={`news-card ${size}`}
                     >
                       {story.mediaUrl && story.mediaType === "image" && (
                         <img className="news-media" src={story.mediaUrl} alt={story.title} />
@@ -1481,11 +1488,29 @@ function normalizeCategory(raw: string): NewsCategory {
   return "Other";
 }
 
-function getStorySize(story?: NewsItem) {
+type StorySize = "news-card--headline" | "news-card--featured" | "news-card--standard" | "news-card--compact";
+
+function getStorySize(story?: NewsItem): StorySize {
   if (!story) return "news-card--compact";
   const summaryLength = story.summary?.length ?? 0;
-  if (story.mediaUrl && summaryLength > 160) return "news-card--headline";
-  if (story.mediaUrl) return "news-card--featured";
-  if (summaryLength < 80) return "news-card--compact";
+  const hasMedia = Boolean(story.mediaUrl);
+  if (hasMedia && summaryLength > 160) return "news-card--headline";
+  if (hasMedia) return "news-card--featured";
+  if (summaryLength > 160) return "news-card--standard";
+  if (summaryLength < 140) return "news-card--compact";
   return "news-card--standard";
+}
+
+function isBigSize(size: StorySize) {
+  return size === "news-card--headline" || size === "news-card--featured";
+}
+
+function adjustStorySize(story: NewsItem, prevSize: StorySize | null): StorySize {
+  const base = getStorySize(story);
+  if (!prevSize) return base;
+  if (isBigSize(prevSize) && isBigSize(base)) {
+    if (base === "news-card--headline" && story.mediaUrl) return "news-card--featured";
+    return story.summary.length < 80 ? "news-card--compact" : "news-card--standard";
+  }
+  return base;
 }
