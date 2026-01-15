@@ -726,13 +726,11 @@ function parseNewsText(text: string): { summary: string; items: NewsItem[] } {
 
 function parseNewsBullet(line: string): NewsItem | null {
   const cleaned = line.replace(/^[-*]\s+/, "").trim();
-  const media = extractMedia(cleaned);
-  const cleanedWithoutMedia = media.cleanedText;
   const markdownLink = cleaned.match(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/);
   if (markdownLink) {
     const title = markdownLink[1];
     const url = markdownLink[2];
-    const summary = cleanedWithoutMedia
+    const summary = cleaned
       .replace(markdownLink[0], "")
       .replace(/^[-–—:]+\s*/, "")
       .trim();
@@ -742,16 +740,14 @@ function parseNewsBullet(line: string): NewsItem | null {
       summary: parsed.summary || "Details in the linked source.",
       url,
       category: parsed.category,
-      mediaUrl: media.mediaUrl,
-      mediaType: media.mediaType,
       tags: parsed.tags,
     };
   }
 
-  const urlMatch = cleanedWithoutMedia.match(/https?:\/\/\S+/);
+  const urlMatch = cleaned.match(/https?:\/\/\S+/);
   if (urlMatch) {
     const url = urlMatch[0].replace(/[),.]+$/, "");
-    const withoutUrl = cleanedWithoutMedia.replace(urlMatch[0], "").trim();
+    const withoutUrl = cleaned.replace(urlMatch[0], "").trim();
     const parts = withoutUrl.split(" - ");
     const title = parts[0] || "Source link";
     const summary = parts.slice(1).join(" - ").trim() || "Details in the linked source.";
@@ -761,20 +757,16 @@ function parseNewsBullet(line: string): NewsItem | null {
       summary: parsed.summary,
       url,
       category: parsed.category,
-      mediaUrl: media.mediaUrl,
-      mediaType: media.mediaType,
       tags: parsed.tags,
     };
   }
 
-  if (!cleanedWithoutMedia) return null;
+  if (!cleaned) return null;
   const parsed = parseCategory("");
   return {
-    title: cleanedWithoutMedia,
+    title: cleaned,
     summary: "",
     category: parsed.category,
-    mediaUrl: media.mediaUrl,
-    mediaType: media.mediaType,
     tags: parsed.tags,
   };
 }
@@ -855,46 +847,6 @@ function renderInline(text: string) {
       }
       return <React.Fragment key={`md-text-${index}`}>{part}</React.Fragment>;
     });
-}
-
-function extractMedia(text: string): {
-  mediaUrl?: string;
-  mediaType?: "image" | "video";
-  cleanedText: string;
-} {
-  let cleanedText = text;
-  let mediaUrl: string | undefined;
-  let mediaType: "image" | "video" | undefined;
-
-  const markdownImage = text.match(/!\[[^\]]*]\((https?:\/\/[^)]+)\)/);
-  if (markdownImage) {
-    mediaUrl = markdownImage[1];
-    mediaType = isImageUrl(mediaUrl) ? "image" : undefined;
-    cleanedText = cleanedText.replace(markdownImage[0], "").trim();
-  }
-
-  const mediaTag = cleanedText.match(/media:\s*(https?:\/\/\S+)/i);
-  if (mediaTag) {
-    mediaUrl = mediaUrl || mediaTag[1].replace(/[),.]+$/, "");
-    mediaType = mediaType || inferMediaType(mediaUrl);
-    cleanedText = cleanedText.replace(mediaTag[0], "").trim();
-  }
-
-  return { mediaUrl, mediaType, cleanedText };
-}
-
-function inferMediaType(url: string): "image" | "video" | undefined {
-  if (isImageUrl(url)) return "image";
-  if (isVideoUrl(url)) return "video";
-  return undefined;
-}
-
-function isImageUrl(url: string) {
-  return /\.(png|jpe?g|gif|webp)$/i.test(url);
-}
-
-function isVideoUrl(url: string) {
-  return /\.(mp4|webm|mov)$/i.test(url) || /youtu\.be|youtube\.com|vimeo\.com/i.test(url);
 }
 
 function runDemoTrace(appendLog: (message: string, meta?: string) => void) {
