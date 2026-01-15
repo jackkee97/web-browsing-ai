@@ -32,6 +32,7 @@ type NewsItem = {
   tags?: string[];
 };
 
+
 const DEFAULT_MANUS_BASE = "https://api.manus.ai";
 const DEFAULT_MANUS_TASKS = {
   create: "/v1/tasks",
@@ -137,9 +138,16 @@ export default function App() {
     status: "idle",
     messages: [],
   });
-  const useCachedBrief = import.meta.env.VITE_DEMO_MODE === "true";
+  const useCachedBrief = import.meta.env.VITE_USE_CACHED_BRIEF === "true";
+  const [onboardingStep, setOnboardingStep] = React.useState<"intro" | "location" | "topics" | "confirm">("intro");
+  const [listening, setListening] = React.useState(false);
+  const [speechError, setSpeechError] = React.useState<string | null>(null);
+  const [transcript, setTranscript] = React.useState("");
 
   const startRef = React.useRef<number | null>(null);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const listenTimeoutRef = React.useRef<number | null>(null);
 
   const appendLog = React.useCallback((message: string, meta = "") => {
     setLogs((prev) => [
@@ -152,6 +160,131 @@ export default function App() {
       },
     ]);
   }, []);
+
+  const speak = React.useCallback(async (text: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      const response = await fetch("/eleven-tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) return;
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBlob = new Blob([arrayBuffer], { type: "audio/mpeg" });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audio.play().catch(() => undefined);
+    } catch {
+      return;
+    }
+  }, []);
+
+  const applyTranscript = React.useCallback(
+    (text: string) => {
+      if (!text) return;
+      if (onboardingStep === "location") {
+        setDraft((prev) => ({ ...prev, location: text }));
+      }
+      if (onboardingStep === "topics") {
+        setDraft((prev) => ({ ...prev, topics: text }));
+      }
+    },
+    [onboardingStep]
+  );
+
+  const startListening = React.useCallback(async () => {
+    if (listening) return;
+    setSpeechError(null);
+    setTranscript("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        if (listenTimeoutRef.current) {
+          window.clearTimeout(listenTimeoutRef.current);
+          listenTimeoutRef.current = null;
+        }
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        try {
+          const formData = new FormData();
+          formData.append("file", blob, "speech.webm");
+          formData.append("audio", blob, "speech.webm");
+          formData.append("model_id", "scribe_v1");
+          const res = await fetch("/eleven-asr", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const err = data?.error;
+            const message = typeof err === "string" ? err : err ? JSON.stringify(err) : "Speech recognition failed.";
+            setSpeechError(message);
+            return;
+          }
+          const text = data?.text || "";
+          if (!text.trim()) {
+            setSpeechError("I couldn't hear that. Try again and speak a little longer.");
+            return;
+          }
+          setTranscript(text);
+          applyTranscript(text);
+        } catch (error) {
+          setSpeechError("Speech recognition failed. Try typing instead.");
+        } finally {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      listenTimeoutRef.current = window.setTimeout(() => {
+        if (mediaRecorderRef.current?.state === "recording") {
+          mediaRecorderRef.current.stop();
+        }
+      }, 4500);
+      setListening(true);
+    } catch (error) {
+      setSpeechError("Microphone access denied.");
+      setListening(false);
+    }
+  }, [applyTranscript, listening]);
+
+  const stopListening = React.useCallback(() => {
+    if (!mediaRecorderRef.current) return;
+    if (listenTimeoutRef.current) {
+      window.clearTimeout(listenTimeoutRef.current);
+      listenTimeoutRef.current = null;
+    }
+    mediaRecorderRef.current.stop();
+    setListening(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!showOnboarding) return;
+    setOnboardingStep("intro");
+    setTranscript("");
+    setSpeechError(null);
+  }, [showOnboarding]);
+
+  React.useEffect(() => {
+    if (!showOnboarding) return;
+    if (onboardingStep === "intro") {
+      speak("Welcome to the news bot. I will ask a few quick questions.");
+    }
+    if (onboardingStep === "location") {
+      speak("Where should I focus the local news? You can say a city, country, or global.");
+    }
+    if (onboardingStep === "topics") {
+      speak("What topics should I follow? You can list a few interests.");
+    }
+    if (onboardingStep === "confirm") {
+      speak("Great. I will start the briefing now.");
+    }
+  }, [onboardingStep, showOnboarding, speak]);
 
   React.useEffect(() => {
     appendLog(
@@ -184,8 +317,8 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [running]);
 
-  async function handleOnboardingSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function completeOnboarding() {
+    if (listening) stopListening();
     const nextProfile = {
       location: draft.location.trim(),
       topics: draft.topics.trim(),
@@ -220,10 +353,10 @@ export default function App() {
         }
         appendLog("No cached briefing found; running live fetch.", "brief");
       }
-    if (!useManus) {
-      runDemoTrace(appendLog);
-      await wait(2200);
-      const demo = buildDemoBrief(nextProfile);
+      if (!useManus) {
+        runDemoTrace(appendLog);
+        await wait(2200);
+        const demo = buildDemoBrief(nextProfile);
         setBrief(demo.summary);
         const withImages = await generateAiMedia(demo.items, nextProfile, appendLog);
         setStories(withImages);
@@ -282,6 +415,17 @@ export default function App() {
   const availableTags = Array.from(
     new Set(extraStories.flatMap((story) => story.tags ?? []).map((tag) => tag.trim()).filter(Boolean))
   );
+  const locationSuggestions = ["Global", "Malaysia", "Singapore", "United States", "Europe", "Asia"];
+  const topicSuggestions = ["Technology", "Business", "Politics", "Food", "Entertainment", "Sports"];
+  const onboardingPrompt =
+    onboardingStep === "intro"
+      ? "I can tailor a daily briefing in two quick questions."
+      : onboardingStep === "location"
+      ? "Where should I focus local coverage?"
+      : onboardingStep === "topics"
+      ? "What topics should I follow?"
+      : "Ready to start your personalized briefing.";
+  const topicsReady = draft.topics.trim().length > 0;
 
   return (
     <div className="page page--news">
@@ -311,49 +455,186 @@ export default function App() {
 
       <main className="grid">
         {showOnboarding && (
-          <section className="panel panel--wide panel--paper">
+          <section className="panel panel--wide panel--paper panel--orb">
             <div className="panel__header panel__header--tight">
               <div>
                 <p className="eyebrow">Onboarding</p>
-                <h3>Set your newsroom desk</h3>
+                <h3>Meet the newsroom bot</h3>
               </div>
             </div>
-            <form className="onboarding__form" onSubmit={handleOnboardingSubmit}>
-              <label className="field">
-                <span>Location focus</span>
-                <input
-                  type="text"
-                  placeholder="Global, Singapore, Bay Area"
-                  value={draft.location}
-                  onChange={(event) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      location: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>Topics to track</span>
-                <input
-                  type="text"
-                  placeholder="AI policy, product launches, fintech, consumer tech"
-                  value={draft.topics}
-                  onChange={(event) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      topics: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </label>
-              <div className="onboarding__actions">
-                <button className="button button--paper" type="submit" disabled={running}>
-                  Start the briefing
-                </button>
+            <div className="orb-layout">
+              <div
+                className={`orb ${listening ? "orb--listening" : ""} ${
+                  onboardingStep === "location" || onboardingStep === "topics" ? "orb--ready" : ""
+                }`}
+                onClick={() => {
+                  if (onboardingStep !== "location" && onboardingStep !== "topics") return;
+                  if (listening) stopListening();
+                  else startListening();
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  if (onboardingStep !== "location" && onboardingStep !== "topics") return;
+                  if (listening) stopListening();
+                  else startListening();
+                }}
+              >
+                <span className="orb__core" />
+                <span className="orb__ring" />
               </div>
-            </form>
+              <div className="orb-content">
+                <p className="orb-prompt">{onboardingPrompt}</p>
+                <p className="muted">
+                  {listening ? "Listening..." : "Tap the orb or use the buttons to speak."}
+                </p>
+                {speechError && <p className="muted">{speechError}</p>}
+                {transcript && (
+                  <div className="orb-transcript">
+                    <span className="eyebrow">Heard</span>
+                    <p>{transcript}</p>
+                  </div>
+                )}
+                {onboardingStep === "intro" && (
+                  <div className="orb-actions">
+                    <button
+                      className="button button--paper"
+                      type="button"
+                      onClick={() => setOnboardingStep("location")}
+                    >
+                      Let us begin
+                    </button>
+                  </div>
+                )}
+                {onboardingStep === "location" && (
+                  <div className="orb-actions">
+                    <div className="field">
+                      <span>Location focus</span>
+                      <input
+                        type="text"
+                        placeholder="Global, Singapore, Bay Area"
+                        value={draft.location}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            location: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="tag-row">
+                      {locationSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          className="chip chip--paper"
+                          onClick={() =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              location: suggestion,
+                            }))
+                          }
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="orb-actions__row">
+                      <button
+                        className="button button--ghost"
+                        type="button"
+                        onClick={listening ? stopListening : startListening}
+                      >
+                        {listening ? "Stop listening" : "Speak location"}
+                      </button>
+                      <button className="button button--paper" type="button" onClick={() => setOnboardingStep("topics")}>
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {onboardingStep === "topics" && (
+                  <div className="orb-actions">
+                    <div className="field">
+                      <span>Topics to track</span>
+                      <input
+                        type="text"
+                        placeholder="AI policy, product launches, fintech, consumer tech"
+                        value={draft.topics}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            topics: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="tag-row">
+                      {topicSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          className="chip chip--paper"
+                          onClick={() =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              topics: prev.topics ? `${prev.topics}, ${suggestion}` : suggestion,
+                            }))
+                          }
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="orb-actions__row">
+                      <button
+                        className="button button--ghost"
+                        type="button"
+                        onClick={listening ? stopListening : startListening}
+                      >
+                        {listening ? "Stop listening" : "Speak topics"}
+                      </button>
+                      <button
+                        className="button button--paper"
+                        type="button"
+                        onClick={() => setOnboardingStep("confirm")}
+                        disabled={!topicsReady}
+                      >
+                        Review
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {onboardingStep === "confirm" && (
+                  <div className="orb-actions">
+                    <div className="orb-summary">
+                      <p className="eyebrow">Edition</p>
+                      <p>{draft.location || "Global"}</p>
+                      <p className="eyebrow">Topics</p>
+                      <p>{draft.topics}</p>
+                    </div>
+                    <div className="orb-actions__row">
+                      <button
+                        className="button button--ghost"
+                        type="button"
+                        onClick={() => setOnboardingStep("topics")}
+                      >
+                        Edit topics
+                      </button>
+                      <button
+                        className="button button--paper"
+                        type="button"
+                        onClick={completeOnboarding}
+                        disabled={!topicsReady || running}
+                      >
+                        Start briefing
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
         )}
 
@@ -380,6 +661,7 @@ export default function App() {
                   onClick={() => {
                     if (profile) {
                       setDraft(profile);
+                      setOnboardingStep("intro");
                       setShowOnboarding(true);
                     }
                   }}

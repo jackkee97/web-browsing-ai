@@ -6,12 +6,14 @@ const MANUS_PROXY_TARGET = "https://api.manus.ai";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const openAiKey = env.OPENAI_API_KEY;
+  const elevenKey = env.ELEVENLABS_API_KEY;
+  const elevenVoiceId = env.ELEVENLABS_VOICE_ID;
   return {
-  plugins: [
-    react(),
-    {
-      name: "ai-image-proxy",
-      configureServer(server) {
+    plugins: [
+      react(),
+      {
+        name: "ai-image-proxy",
+        configureServer(server) {
         server.middlewares.use("/ai-image", async (req, res) => {
           try {
             if (req.method !== "POST") {
@@ -83,6 +85,106 @@ export default defineConfig(({ mode }) => {
           } catch (error) {
             res.statusCode = 500;
             res.end("File proxy error");
+          }
+        });
+        server.middlewares.use("/eleven-tts", async (req, res) => {
+          try {
+            if (req.method !== "POST") {
+              res.statusCode = 405;
+              res.end("Method not allowed");
+              return;
+            }
+            if (!elevenKey || !elevenVoiceId) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: "Missing ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID" }));
+              return;
+            }
+            const body = await new Promise<string>((resolve) => {
+              let raw = "";
+              req.on("data", (chunk) => {
+                raw += chunk;
+              });
+              req.on("end", () => resolve(raw));
+            });
+            const parsed = body ? JSON.parse(body) : {};
+            const text = parsed?.text;
+            if (!text) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: "Missing text" }));
+              return;
+            }
+            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}`, {
+              method: "POST",
+              headers: {
+                "xi-api-key": elevenKey,
+                "Content-Type": "application/json",
+                Accept: "audio/mpeg",
+              },
+              body: JSON.stringify({
+                text,
+                model_id: "eleven_turbo_v2_5",
+              }),
+            });
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}));
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: data?.detail || "TTS failed" }));
+              return;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "audio/mpeg");
+            res.end(Buffer.from(arrayBuffer));
+          } catch (error) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(JSON.stringify({ error: "TTS proxy error" }));
+          }
+        });
+        server.middlewares.use("/eleven-asr", async (req, res) => {
+          try {
+            if (req.method !== "POST") {
+              res.statusCode = 405;
+              res.end("Method not allowed");
+              return;
+            }
+            if (!elevenKey) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: "Missing ELEVENLABS_API_KEY" }));
+              return;
+            }
+            const contentType = req.headers["content-type"] || "application/octet-stream";
+            const chunks: Buffer[] = [];
+            await new Promise<void>((resolve) => {
+              req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+              req.on("end", () => resolve());
+            });
+            const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+              method: "POST",
+              headers: {
+                "xi-api-key": elevenKey,
+                "Content-Type": contentType,
+              },
+              body: Buffer.concat(chunks),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: data?.detail || "ASR failed" }));
+              return;
+            }
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(JSON.stringify({ text: data?.text || "" }));
+          } catch (error) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(JSON.stringify({ error: "ASR proxy error" }));
           }
         });
       },

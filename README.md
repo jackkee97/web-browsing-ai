@@ -26,8 +26,10 @@ cp .env.example .env.local
 ## Env vars
 Set these in `.env.local` (not committed):
 - `VITE_MANUS_API_KEY` – Manus API key (omit to stay in demo mode)
-- `VITE_DEMO_MODE` – set to `true` to load the last briefing from local storage
+- `VITE_USE_CACHED_BRIEF` – set to `true` to load the last briefing from local storage
 - `OPENAI_API_KEY` – OpenAI key for AI-generated story images (required to render media)
+- `ELEVENLABS_API_KEY` – ElevenLabs key for onboarding TTS/STT
+- `ELEVENLABS_VOICE_ID` – ElevenLabs voice id for onboarding TTS
 In dev, requests are proxied through `/manus` to avoid CORS; production uses `https://api.manus.ai` directly.
 
 ## How it works

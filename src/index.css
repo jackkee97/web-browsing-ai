@@ -285,6 +285,103 @@ input[type="text"]::placeholder {
   justify-content: flex-start;
 }
 
+.panel--orb {
+  position: relative;
+  overflow: hidden;
+}
+
+.orb-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 320px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.orb {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffffff, #f2e6d7 45%, #c7b9a4 75%);
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 20px 60px rgba(31, 26, 20, 0.18);
+  cursor: default;
+}
+
+.orb--ready {
+  cursor: pointer;
+}
+
+.orb__core {
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #fff, #d2c3b1 70%);
+  opacity: 0.9;
+}
+
+.orb__ring {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(31, 26, 20, 0.18);
+}
+
+.orb--listening {
+  animation: orb-pulse 1.8s ease-in-out infinite;
+}
+
+.orb-content {
+  display: grid;
+  gap: 12px;
+}
+
+.orb-prompt {
+  font-size: 18px;
+  margin: 0;
+}
+
+.orb-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.orb-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.orb-summary {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--paper-border);
+  background: var(--paper-strong);
+}
+
+.orb-transcript {
+  border-radius: 12px;
+  border: 1px solid var(--paper-border);
+  padding: 10px 12px;
+  background: var(--paper-strong);
+}
+
+@keyframes orb-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(31, 26, 20, 0.2), 0 20px 60px rgba(31, 26, 20, 0.18);
+  }
+  70% {
+    box-shadow: 0 0 0 20px rgba(31, 26, 20, 0), 0 24px 70px rgba(31, 26, 20, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(31, 26, 20, 0.2), 0 20px 60px rgba(31, 26, 20, 0.18);
+  }
+}
+
 .news-grid {
   display: grid;
   gap: 14px;
@@ -627,6 +724,16 @@ input[type="text"]::placeholder {
   .news-card--headline {
     grid-column: span 1;
     grid-row: span 1;
+  }
+
+  .orb-layout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .orb {
+    width: 180px;
+    height: 180px;
   }
 
   .input-row {
