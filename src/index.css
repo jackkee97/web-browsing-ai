@@ -73,6 +73,17 @@ body {
   position: relative;
   display: grid;
   gap: 24px;
+  --paper: #0c1118;
+  --paper-strong: #101826;
+  --paper-border: rgba(140, 241, 255, 0.18);
+  --paper-text: #e6f7ff;
+  --paper-muted: rgba(182, 205, 221, 0.8);
+  --accent: #8cf1ff;
+  --accent-2: #4ce3ff;
+  --onboard-bg: #05070b;
+  --onboard-surface: rgba(12, 17, 24, 0.86);
+  --onboard-accent: var(--accent);
+  --onboard-accent-2: var(--accent-2);
 }
 
 .page--onboarding::before {
@@ -80,9 +91,9 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(120% 120% at 10% 10%, rgba(126, 240, 196, 0.18), transparent 55%),
-    radial-gradient(120% 120% at 90% 5%, rgba(242, 184, 128, 0.16), transparent 50%),
-    radial-gradient(160% 140% at 50% 80%, rgba(89, 120, 255, 0.08), transparent 60%),
+  background: radial-gradient(120% 120% at 15% 15%, rgba(76, 227, 255, 0.14), transparent 50%),
+    radial-gradient(120% 120% at 80% 10%, rgba(120, 86, 255, 0.16), transparent 48%),
+    radial-gradient(140% 140% at 50% 85%, rgba(15, 24, 40, 0.85), transparent 60%),
     var(--onboard-bg);
 }
 
@@ -107,14 +118,14 @@ body {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(233, 233, 239, 0.7);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--paper-border);
+  color: rgba(230, 247, 255, 0.78);
+  background: rgba(12, 17, 24, 0.7);
 }
 
 .onboarding-step.is-active {
-  color: #0b0f12;
-  background: linear-gradient(120deg, var(--onboard-accent), var(--onboard-accent-2));
+  color: #071018;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
   border-color: transparent;
 }
 
@@ -129,8 +140,8 @@ body {
   grid-template-columns: minmax(0, 1.2fr) minmax(200px, 0.8fr);
   padding: 28px;
   border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(140deg, rgba(15, 20, 28, 0.9), rgba(9, 12, 16, 0.92));
+  border: 1px solid var(--paper-border);
+  background: linear-gradient(140deg, rgba(12, 17, 24, 0.95), rgba(10, 14, 20, 0.92));
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45);
 }
 
@@ -149,17 +160,18 @@ body {
   margin: 0;
   font-family: var(--headline-font);
   font-size: 28px;
+  color: var(--paper-text);
 }
 
 .onboarding-prompt {
   margin: 0;
   font-size: 18px;
-  color: rgba(233, 233, 239, 0.92);
+  color: var(--paper-text);
 }
 
 .onboarding-hint {
   margin: 0;
-  color: rgba(233, 233, 239, 0.65);
+  color: var(--paper-muted);
 }
 
 .masthead {
@@ -434,6 +446,12 @@ textarea::placeholder {
   color: #061018;
 }
 
+.page--onboarding .button--paper {
+  background: linear-gradient(120deg, rgba(140, 241, 255, 0.95), rgba(76, 227, 255, 0.95));
+  color: #061018;
+  box-shadow: 0 10px 28px rgba(76, 227, 255, 0.28);
+}
+
 .page--news .button--ghost {
   border-color: rgba(140, 241, 255, 0.4);
   color: var(--paper-text);
@@ -639,15 +657,15 @@ textarea::placeholder {
 
 .page--onboarding .orb-summary,
 .page--onboarding .orb-transcript {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(233, 233, 239, 0.9);
+  border-color: var(--paper-border);
+  background: var(--paper-strong);
+  color: var(--paper-text);
 }
 
 .page--onboarding .chip--paper {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(233, 233, 239, 0.85);
+  border-color: var(--paper-border);
+  background: var(--paper-strong);
+  color: var(--paper-text);
 }
 
 @keyframes orb-pulse {
