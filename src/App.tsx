@@ -44,8 +44,7 @@ const DEFAULT_MANUS_POLL_INTERVAL = 2000;
 const DEFAULT_MANUS_MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
 const PROFILE_STORAGE_KEY = "manus.reader.profile";
 const CACHE_STORAGE_KEY = "manus.news.cache";
-const NEWS_MEDIA_PER_PAGE = 2;
-const NEWS_TEXT_PER_PAGE = 3;
+const NEWS_PAGE_SIZE = 9;
 
 function useManusConfig() {
   const base = (import.meta.env.DEV ? "/manus" : DEFAULT_MANUS_BASE).replace(/\/$/, "");
@@ -133,6 +132,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = React.useState<string | null>(null);
   const [logs, setLogs] = React.useState<LogLine[]>([]);
   const [page, setPage] = React.useState(1);
+  const [activeTag, setActiveTag] = React.useState<string | null>(null);
   const [manusProgress, setManusProgress] = React.useState<ManusProgress>({
     status: "idle",
     messages: [],
@@ -164,15 +164,14 @@ export default function App() {
   }, [appendLog, manusConfig.base, useManus]);
 
   React.useEffect(() => {
-    const mediaPages = Math.ceil(
-      stories.filter((story, index) => index > 0 && story.mediaUrl).length / NEWS_MEDIA_PER_PAGE
-    );
-    const textPages = Math.ceil(
-      stories.filter((story, index) => index > 0 && !story.mediaUrl).length / NEWS_TEXT_PER_PAGE
-    );
-    const totalPages = Math.max(1, Math.max(mediaPages, textPages));
+    const totalPages = Math.max(1, Math.ceil((stories.length - 1) / NEWS_PAGE_SIZE));
     if (page > totalPages) setPage(totalPages);
-  }, [page, stories]);
+  }, [page, stories.length]);
+
+  React.useEffect(() => {
+    setActiveTag(null);
+    setPage(1);
+  }, [stories.length]);
 
   React.useEffect(() => {
     if (!running || !startRef.current) {
@@ -272,21 +271,17 @@ export default function App() {
     }
   }
 
-  const leadStory = stories[0];
   const extraStories = stories.slice(1);
-  const mediaStories = extraStories.filter((story) => story.mediaUrl);
-  const textStories = extraStories.filter((story) => !story.mediaUrl);
-  const totalPages = Math.max(
-    1,
-    Math.max(
-      Math.ceil(mediaStories.length / NEWS_MEDIA_PER_PAGE),
-      Math.ceil(textStories.length / NEWS_TEXT_PER_PAGE)
-    )
-  );
+  const visibleStories = activeTag
+    ? extraStories.filter((story) => story.tags?.some((tag) => tag.toLowerCase() === activeTag.toLowerCase()))
+    : extraStories;
+  const totalPages = Math.max(1, Math.ceil(visibleStories.length / NEWS_PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pagedMedia = getPagedSlice(mediaStories, safePage, totalPages);
-  const pagedText = getPagedSlice(textStories, safePage, totalPages);
-  const leadSize = getStorySize(leadStory);
+  const pageStart = (safePage - 1) * NEWS_PAGE_SIZE;
+  const pagedStories = visibleStories.slice(pageStart, pageStart + NEWS_PAGE_SIZE);
+  const availableTags = Array.from(
+    new Set(extraStories.flatMap((story) => story.tags ?? []).map((tag) => tag.trim()).filter(Boolean))
+  );
 
   return (
     <div className="page page--news">
@@ -396,150 +391,101 @@ export default function App() {
 
             {running && <p className="muted">Composing your front page... sit tight.</p>}
 
-            <div className="news-layout">
-              {!running && leadStory ? (
-                <article className={`news-lead ${leadSize}`}>
-                  <p className="news-kicker">Lead story</p>
-                  {leadStory.mediaUrl && leadStory.mediaType === "image" && (
-                    <img className="news-media" src={leadStory.mediaUrl} alt={leadStory.title} />
-                  )}
-                  {leadStory.mediaUrl && leadStory.mediaType === "video" && (
-                    <a className="news-link" href={leadStory.mediaUrl} target="_blank" rel="noreferrer">
-                      Watch the clip
-                    </a>
-                  )}
-                  <h4 className="news-lead__title">{leadStory.title}</h4>
-                  {leadStory.tags?.length ? (
-                    <div className="tag-row">
-                      {leadStory.tags.map((tag) => (
-                        <span key={`${leadStory.title}-${tag}`} className="chip chip--paper">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="news-lead__summary markdown">
-                    {brief ? renderMarkdown(brief) : <p className="muted">No brief yet.</p>}
-                  </div>
-                  {leadStory.url && (
-                    <a className="news-link" href={leadStory.url} target="_blank" rel="noreferrer">
-                      Read the source
-                    </a>
-                  )}
-                </article>
-              ) : (
-                <article className="news-lead news-lead--placeholder">
-                  <p className="news-kicker">Lead story</p>
-                  <p className="muted">Front page will appear once the briefing completes.</p>
-                </article>
-              )}
-
-              <div className="news-sections">
-                {extraStories.length === 0 ? (
-                  <div className="news-card news-card--empty">
-                    <p className="muted">Related stories will appear here once the brief is ready.</p>
-                  </div>
-                ) : (
-                  <>
-                    <section className="news-section">
-                      <h5 className="news-section__title">Secondary stories</h5>
-                      <div className="news-section__grid news-section__grid--featured">
-                        {pagedMedia.length === 0 ? (
-                          <p className="muted">No media-rich stories on this page.</p>
-                        ) : (
-                          pagedMedia.map((story) => (
-                            <article
-                              key={`${story.title}-${story.url ?? "story"}`}
-                              className="news-card news-card--featured"
-                            >
-                              {story.mediaUrl && story.mediaType === "image" && (
-                                <img className="news-media" src={story.mediaUrl} alt={story.title} />
-                              )}
-                              {story.mediaUrl && story.mediaType === "video" && (
-                                <a className="news-link" href={story.mediaUrl} target="_blank" rel="noreferrer">
-                                  Watch the clip
-                                </a>
-                              )}
-                              <h6 className="news-card__title">{story.title}</h6>
-                              {story.tags?.length ? (
-                                <div className="tag-row">
-                                  {story.tags.map((tag) => (
-                                    <span key={`${story.title}-${tag}`} className="chip chip--paper">
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                              <p className="news-card__summary">{story.summary}</p>
-                              {story.url && (
-                                <a className="news-link" href={story.url} target="_blank" rel="noreferrer">
-                                  Source link
-                                </a>
-                              )}
-                            </article>
-                          ))
-                        )}
-                      </div>
-                    </section>
-                    <section className="news-section">
-                      <h5 className="news-section__title">More briefs</h5>
-                      <div className="news-section__grid news-section__grid--compact">
-                        {pagedText.length === 0 ? (
-                          <p className="muted">No additional briefs on this page.</p>
-                        ) : (
-                          pagedText.map((story) => (
-                            <article
-                              key={`${story.title}-${story.url ?? "story"}`}
-                              className="news-card news-card--compact"
-                            >
-                              <h6 className="news-card__title">{story.title}</h6>
-                              {story.tags?.length ? (
-                                <div className="tag-row">
-                                  {story.tags.map((tag) => (
-                                    <span key={`${story.title}-${tag}`} className="chip chip--paper">
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                              <p className="news-card__summary">{story.summary}</p>
-                              {story.url && (
-                                <a className="news-link" href={story.url} target="_blank" rel="noreferrer">
-                                  Source link
-                                </a>
-                              )}
-                            </article>
-                          ))
-                        )}
-                      </div>
-                    </section>
-                  </>
-                )}
+            {running ? (
+              <div className="news-grid news-grid--placeholder">
+                <p className="muted">Building your front page...</p>
               </div>
-              {totalPages > 1 && (
-                <div className="news-pagination">
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    disabled={safePage === 1}
-                  >
-                    Previous page
-                  </button>
-                  <span className="news-pagination__label">
-                    Page {safePage} of {totalPages}
-                  </span>
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                    disabled={safePage === totalPages}
-                  >
-                    Next page
-                  </button>
+            ) : extraStories.length === 0 ? (
+              <div className="news-card news-card--empty">
+                <p className="muted">Related stories will appear here once the brief is ready.</p>
+              </div>
+            ) : (
+              <>
+                {availableTags.length > 0 && (
+                  <div className="tag-filter">
+                    <button
+                      type="button"
+                      className={`chip chip--paper ${activeTag ? "" : "chip--active"}`}
+                      onClick={() => {
+                        setActiveTag(null);
+                        setPage(1);
+                      }}
+                    >
+                      All
+                    </button>
+                    {availableTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={`chip chip--paper ${activeTag === tag ? "chip--active" : ""}`}
+                        onClick={() => {
+                          setActiveTag(tag);
+                          setPage(1);
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="news-grid news-grid--masonry">
+                  {pagedStories.map((story) => (
+                    <article
+                      key={`${story.title}-${story.url ?? "story"}`}
+                      className={`news-card ${getStorySize(story)}`}
+                    >
+                      {story.mediaUrl && story.mediaType === "image" && (
+                        <img className="news-media" src={story.mediaUrl} alt={story.title} />
+                      )}
+                      {story.mediaUrl && story.mediaType === "video" && (
+                        <a className="news-link" href={story.mediaUrl} target="_blank" rel="noreferrer">
+                          Watch the clip
+                        </a>
+                      )}
+                      <h6 className="news-card__title">{story.title}</h6>
+                      {story.tags?.length ? (
+                        <div className="tag-row">
+                          {story.tags.map((tag) => (
+                            <span key={`${story.title}-${tag}`} className="chip chip--paper">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <p className="news-card__summary">{story.summary}</p>
+                      {story.url && (
+                        <a className="news-link" href={story.url} target="_blank" rel="noreferrer">
+                          Source link
+                        </a>
+                      )}
+                    </article>
+                  ))}
                 </div>
-              )}
-            </div>
+              </>
+            )}
+            {totalPages > 1 && (
+              <div className="news-pagination">
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  disabled={safePage === 1}
+                >
+                  Previous page
+                </button>
+                <span className="news-pagination__label">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={safePage === totalPages}
+                >
+                  Next page
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -958,7 +904,8 @@ function normalizeCategory(raw: string): NewsCategory {
 function getStorySize(story?: NewsItem) {
   if (!story) return "news-card--compact";
   const summaryLength = story.summary?.length ?? 0;
-  if (story.mediaUrl || summaryLength > 180) return "news-card--featured";
-  if (summaryLength < 80 && !story.mediaUrl) return "news-card--compact";
+  if (story.mediaUrl && summaryLength > 160) return "news-card--headline";
+  if (story.mediaUrl) return "news-card--featured";
+  if (summaryLength < 80) return "news-card--compact";
   return "news-card--standard";
 }
