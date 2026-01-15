@@ -274,6 +274,10 @@ input[type="text"]::placeholder {
   gap: 12px;
 }
 
+.results--stack {
+  grid-template-columns: 1fr;
+}
+
 .result-card {
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -291,6 +295,43 @@ input[type="text"]::placeholder {
 .result-card p {
   margin: 0;
   color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown {
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.markdown h4,
+.markdown h5 {
+  margin: 0;
+  color: #fff;
+  font-size: 16px;
+}
+
+.markdown__paragraph {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.markdown li {
+  margin: 0;
+}
+
+.markdown a {
+  color: var(--accent);
+  text-decoration: none;
 }
 
 .result-card a {

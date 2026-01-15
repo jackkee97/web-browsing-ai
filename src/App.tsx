@@ -339,7 +339,7 @@ export default function App() {
         </section>
 
         {useManus && (
-          <section className="panel">
+          <section className="panel panel--wide">
             <div className="panel__header panel__header--tight">
               <div>
                 <p className="eyebrow">Manus activity</p>
@@ -359,14 +359,14 @@ export default function App() {
                 ) : null}
               </div>
             </div>
-            <div className="results">
+            <div className="results results--stack">
               {manusProgress.messages.length === 0 ? (
                 <p className="muted">Waiting for Manus task output...</p>
               ) : (
                 manusProgress.messages.map((m) => (
                   <div key={m.id} className="result-card">
                     <h4>{m.role}</h4>
-                    <p>{m.text}</p>
+                    <div className="markdown">{renderMarkdown(m.text)}</div>
                   </div>
                 ))
               )}
@@ -614,4 +614,55 @@ function extractManusMessages(task: any): { id: string; role: string; text: stri
 
 function buildManusPrompt(userQuery: string, manusConfig: ReturnType<typeof useManusConfig>) {
   return `${manusConfig.systemPrompt}\n\nUser query: ${userQuery}\n\nInstructions: Prioritize social platform content (Reddit, Twitter/X, Facebook groups, YouTube comments). Provide the top relevant links/posts and a concise synthesis of opinions and comparisons. Keep it brief and actionable.`;
+}
+
+function renderMarkdown(text: string) {
+  if (!text) return null;
+  const blocks = text.split(/\n{2,}/g);
+  return blocks.map((block, blockIndex) => {
+    const lines = block.split("\n");
+    const isList = lines.every((line) => /^[-*]\s+/.test(line));
+    if (isList) {
+      return (
+        <ul key={`md-list-${blockIndex}`}>
+          {lines.map((line, idx) => (
+            <li key={`md-li-${blockIndex}-${idx}`}>{renderInline(line.replace(/^[-*]\s+/, ""))}</li>
+          ))}
+        </ul>
+      );
+    }
+    const headingMatch = block.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = headingMatch[2];
+      const HeadingTag = level <= 2 ? "h4" : "h5";
+      return <HeadingTag key={`md-h-${blockIndex}`}>{renderInline(content)}</HeadingTag>;
+    }
+    return (
+      <p key={`md-p-${blockIndex}`} className="markdown__paragraph">
+        {renderInline(block)}
+      </p>
+    );
+  });
+}
+
+function renderInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g);
+  return parts
+    .filter(Boolean)
+    .map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={`md-strong-${index}`}>{part.slice(2, -2)}</strong>;
+      }
+      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        const [, label, href] = linkMatch;
+        return (
+          <a key={`md-link-${index}`} href={href} target="_blank" rel="noreferrer">
+            {label}
+          </a>
+        );
+      }
+      return <React.Fragment key={`md-text-${index}`}>{part}</React.Fragment>;
+    });
 }
