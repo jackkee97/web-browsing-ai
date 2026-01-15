@@ -315,29 +315,6 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel">
-          <div className="panel__header panel__header--tight">
-            <div>
-              <p className="eyebrow">Background process</p>
-              <h3>Agent trace</h3>
-            </div>
-            <div className="pill pill--ghost">{formatElapsed(elapsed)}</div>
-          </div>
-          <div className="log">
-            {logs.length === 0 ? (
-              <p className="muted">No trace yet. Submit a query to watch the agent work.</p>
-            ) : (
-              logs.map((line) => (
-                <p key={line.id} className="log__line">
-                  <span className="log__meta">[{line.ts}] {line.meta}</span>
-                  <br />
-                  {line.message}
-                </p>
-              ))
-            )}
-          </div>
-        </section>
-
         {useManus && (
           <section className="panel panel--wide">
             <div className="panel__header panel__header--tight">
@@ -377,35 +354,26 @@ export default function App() {
         <section className="panel panel--wide">
           <div className="panel__header panel__header--tight">
             <div>
-              <p className="eyebrow">Search output</p>
-              <h3>Findings</h3>
+              <p className="eyebrow">Background process</p>
+              <h3>Agent trace</h3>
             </div>
-            <div className="pill pill--ghost">
-              {results.length} result{results.length === 1 ? "" : "s"}
-            </div>
+            <div className="pill pill--ghost">{formatElapsed(elapsed)}</div>
           </div>
-          <div className="results">
-            {summary && (
-              <div className="result-card">
-                <h4>Agent synthesis</h4>
-                <p>{summary}</p>
-              </div>
-            )}
-            {results.length === 0 ? (
-              <p className="muted">No results yet. Running agent...</p>
+          <div className="log">
+            {logs.length === 0 ? (
+              <p className="muted">No trace yet. Submit a query to watch the agent work.</p>
             ) : (
-              results.map((item, idx) => (
-                <div key={`${item.url}-${idx}`} className="result-card">
-                  <h4>{item.title}</h4>
-                  <p>{item.snippet}</p>
-                  <a href={item.url} target="_blank" rel="noreferrer">
-                    Open source
-                  </a>
-                </div>
+              logs.map((line) => (
+                <p key={line.id} className="log__line">
+                  <span className="log__meta">[{line.ts}] {line.meta}</span>
+                  <br />
+                  {line.message}
+                </p>
               ))
             )}
           </div>
         </section>
+
       </main>
     </div>
   );
