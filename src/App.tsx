@@ -984,7 +984,7 @@ export default function App() {
             {brief && safePage === 1 && !running && (
               <div className="front-summary">
                 <span className="front-summary__label">Front summary</span>
-                {renderMarkdown(brief)}
+                <div className="markdown">{renderMarkdown(brief)}</div>
               </div>
             )}
 
@@ -1048,7 +1048,7 @@ export default function App() {
                           Watch the clip
                         </a>
                       )}
-                      <h6 className="news-card__title">{story.title}</h6>
+                      <h6 className="news-card__title">{renderMarkdown(story.title)}</h6>
                       {story.tags?.length ? (
                         <div className="tag-row">
                           {story.tags.map((tag) => (
@@ -1058,10 +1058,10 @@ export default function App() {
                           ))}
                         </div>
                       ) : null}
-                      <p className="news-card__summary">{story.summary}</p>
+                      <div className="news-card__summary markdown">{renderMarkdown(story.summary)}</div>
                       {story.url && (
                         <a className="news-link" href={story.url} target="_blank" rel="noreferrer">
-                          Source link
+                          Read full news
                         </a>
                       )}
                     </article>

@@ -283,6 +283,33 @@ h3 {
   line-height: 1.5;
 }
 
+.front-summary .markdown {
+  display: grid;
+  gap: 10px;
+  color: var(--paper-text);
+}
+
+.front-summary .markdown ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.front-summary .markdown li {
+  margin-bottom: 6px;
+}
+
+.front-summary .markdown h4,
+.front-summary .markdown h5 {
+  margin: 0;
+  font-family: var(--headline-font);
+  color: var(--paper-text);
+}
+
+.front-summary .markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
 .panel--primary {
   grid-column: 1 / -1;
   background: linear-gradient(120deg, rgba(140, 241, 255, 0.15), rgba(177, 107, 255, 0.12));
