@@ -46,6 +46,25 @@ body {
 
 .page--news {
   max-width: 1280px;
+  position: relative;
+  --paper: #0c1118;
+  --paper-strong: #101826;
+  --paper-border: rgba(140, 241, 255, 0.18);
+  --paper-text: #e6f7ff;
+  --paper-muted: rgba(182, 205, 221, 0.8);
+  --accent: #8cf1ff;
+  --accent-2: #4ce3ff;
+}
+
+.page--news::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(120% 120% at 15% 15%, rgba(76, 227, 255, 0.14), transparent 50%),
+    radial-gradient(120% 120% at 80% 10%, rgba(120, 86, 255, 0.16), transparent 48%),
+    radial-gradient(140% 140% at 50% 85%, rgba(15, 24, 40, 0.85), transparent 60%),
+    #05070b;
 }
 
 .page--onboarding {
@@ -376,6 +395,22 @@ textarea::placeholder {
   border: 1px solid var(--paper-border);
   color: var(--paper-text);
   box-shadow: none;
+}
+
+.page--news .button {
+  color: #061018;
+  box-shadow: 0 8px 28px rgba(76, 227, 255, 0.28);
+}
+
+.page--news .button--paper {
+  background: linear-gradient(120deg, rgba(140, 241, 255, 0.9), rgba(76, 227, 255, 0.9));
+  color: #061018;
+}
+
+.page--news .button--ghost {
+  border-color: rgba(140, 241, 255, 0.4);
+  color: var(--paper-text);
+  background: rgba(9, 16, 26, 0.6);
 }
 
 .button:disabled {
@@ -801,8 +836,9 @@ textarea::placeholder {
 }
 
 .chip--active {
-  background: #1f1a14;
-  color: var(--paper);
+  background: linear-gradient(120deg, rgba(140, 241, 255, 0.9), rgba(76, 227, 255, 0.9));
+  color: #061018;
+  border-color: rgba(140, 241, 255, 0.6);
 }
 
 .progress {
