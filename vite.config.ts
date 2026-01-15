@@ -66,6 +66,76 @@ export default defineConfig(({ mode }) => {
             res.end(JSON.stringify({ error: "AI image error" }));
           }
         });
+        server.middlewares.use("/ai-onboarding", async (req, res) => {
+          try {
+            if (req.method !== "POST") {
+              res.statusCode = 405;
+              res.end("Method not allowed");
+              return;
+            }
+            const apiKey = openAiKey;
+            if (!apiKey) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: "Missing OPENAI_API_KEY" }));
+              return;
+            }
+            const body = await new Promise<string>((resolve) => {
+              let raw = "";
+              req.on("data", (chunk) => {
+                raw += chunk;
+              });
+              req.on("end", () => resolve(raw));
+            });
+            const parsed = body ? JSON.parse(body) : {};
+            const text = parsed?.text;
+            if (!text) {
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ error: "Missing text" }));
+              return;
+            }
+            const existing = parsed?.existing || {};
+            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                temperature: 0.2,
+                response_format: { type: "json_object" },
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "You extract a user's preferred news region and topics. Respond only in JSON with keys: location (string or null), topics (array of strings or empty array), missing (array containing 'location' and/or 'topics'), followupQuestion (string or null). If uncertain, mark as missing and ask a single follow-up question.",
+                  },
+                  {
+                    role: "user",
+                    content: `User reply: ${text}\nExisting location: ${existing.location || ""}\nExisting topics: ${existing.topics || ""}`,
+                  },
+                ],
+              }),
+            });
+            const data = await response.json().catch(() => ({}));
+            const content = data?.choices?.[0]?.message?.content || "{}";
+            let parsedContent = {};
+            try {
+              parsedContent = JSON.parse(content);
+            } catch (error) {
+              parsedContent = { location: null, topics: [], missing: ["location", "topics"], followupQuestion: null };
+            }
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.statusCode = response.ok ? 200 : 500;
+            res.end(JSON.stringify(response.ok ? parsedContent : { error: data?.error?.message || "LLM error" }));
+          } catch (error) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(JSON.stringify({ error: "Onboarding LLM error" }));
+          }
+        });
         server.middlewares.use("/manus-file", async (req, res) => {
           try {
             const url = new URL(req.url ?? "", "http://localhost");

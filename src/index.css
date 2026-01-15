@@ -291,6 +291,19 @@ input[type="text"] {
   font-size: 16px;
 }
 
+textarea {
+  flex: 1;
+  min-width: 260px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 16px;
+  font-family: inherit;
+  resize: vertical;
+}
+
 .panel--paper input[type="text"] {
   border-color: var(--paper-border);
   background: var(--paper-strong);
@@ -302,6 +315,10 @@ input[type="text"] {
 }
 
 input[type="text"]::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+textarea::placeholder {
   color: rgba(255, 255, 255, 0.55);
 }
 

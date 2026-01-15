@@ -19,6 +19,15 @@ type ReaderProfile = {
   topics: string;
 };
 
+type OnboardingParseMissing = "location" | "topics";
+
+type OnboardingParseResult = {
+  location?: string | null;
+  topics?: string[] | string | null;
+  followupQuestion?: string | null;
+  missing?: OnboardingParseMissing[] | null;
+};
+
 type NewsCategory = "Local" | "International" | "Interest" | "Social" | "Other";
 
 type NewsItem = {
@@ -46,6 +55,8 @@ const DEFAULT_MANUS_MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
 const PROFILE_STORAGE_KEY = "manus.reader.profile";
 const CACHE_STORAGE_KEY = "manus.news.cache";
 const NEWS_PAGE_SIZE = 9;
+const LOCATION_SUGGESTIONS = ["Global", "Malaysia", "Singapore", "United States", "Europe", "Asia"];
+const TOPIC_SUGGESTIONS = ["Technology", "Business", "Politics", "Food", "Entertainment", "Sports"];
 
 function useManusConfig() {
   const base = (import.meta.env.DEV ? "/manus" : DEFAULT_MANUS_BASE).replace(/\/$/, "");
@@ -97,6 +108,11 @@ function saveProfile(profile: ReaderProfile) {
   window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
 }
 
+function clearProfile() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(PROFILE_STORAGE_KEY);
+}
+
 function loadCachedBrief(): { summary: string; items: NewsItem[] } | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(CACHE_STORAGE_KEY);
@@ -144,6 +160,10 @@ export default function App() {
   const [speechError, setSpeechError] = React.useState<string | null>(null);
   const [transcript, setTranscript] = React.useState("");
   const [speaking, setSpeaking] = React.useState(false);
+  const [onboardingQuery, setOnboardingQuery] = React.useState("");
+  const [onboardingFollowup, setOnboardingFollowup] = React.useState<string | null>(null);
+  const [onboardingParseError, setOnboardingParseError] = React.useState<string | null>(null);
+  const [onboardingParsing, setOnboardingParsing] = React.useState(false);
 
   const startRef = React.useRef<number | null>(null);
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
@@ -152,6 +172,7 @@ export default function App() {
   const listeningRef = React.useRef(false);
   const speakIdRef = React.useRef(0);
   const applyTranscriptRef = React.useRef<(text: string) => void>(() => undefined);
+  const lastListenPromptRef = React.useRef(0);
 
   const appendLog = React.useCallback((message: string, meta = "") => {
     setLogs((prev) => [
@@ -201,17 +222,68 @@ export default function App() {
     }
   }, []);
 
-  const applyTranscript = React.useCallback(
-    (text: string) => {
-      if (!text) return;
-      if (onboardingStep === "location") {
-        setDraft((prev) => ({ ...prev, location: text }));
+  const requestOnboardingParse = React.useCallback(async (text: string) => {
+    const response = await fetch("/ai-onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        existing: { location: draft.location, topics: draft.topics },
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = typeof data?.error === "string" ? data.error : "Onboarding parse failed.";
+      throw new Error(message);
+    }
+    return data as OnboardingParseResult;
+  }, [draft.location, draft.topics]);
+
+  const normalizeTopics = React.useCallback((topics: OnboardingParseResult["topics"]) => {
+    if (!topics) return "";
+    if (Array.isArray(topics)) {
+      return topics.map((topic) => topic.trim()).filter(Boolean).join(", ");
+    }
+    if (typeof topics === "string") return topics.trim();
+    return "";
+  }, []);
+
+  const buildFollowupQuestion = React.useCallback((missing: OnboardingParseMissing[]) => {
+    if (missing.includes("location") && missing.includes("topics")) {
+      return "What region should I focus on, and which topics should I follow?";
+    }
+    if (missing.includes("location")) {
+      return "Which region should I focus on for local news?";
+    }
+    return "Which topics should I track for you?";
+  }, []);
+
+  const isUncertainReply = React.useCallback((text: string) => {
+    const lowered = text.toLowerCase();
+    return (
+      lowered.includes("don't know") ||
+      lowered.includes("dont know") ||
+      lowered.includes("not sure") ||
+      lowered.includes("no idea") ||
+      lowered.includes("you decide") ||
+      lowered.includes("whatever") ||
+      lowered.includes("help me") ||
+      lowered.includes("suggest") ||
+      lowered.includes("recommend") ||
+      lowered.includes("give me ideas")
+    );
+  }, []);
+
+  const buildSuggestionPrompt = React.useCallback(
+    (step: "location" | "topics") => {
+      if (step === "location") {
+        const ideas = LOCATION_SUGGESTIONS.slice(0, 4).join(", ");
+        return `No worries. Pick a region like ${ideas}, or say "global".`;
       }
-      if (onboardingStep === "topics") {
-        setDraft((prev) => ({ ...prev, topics: text }));
-      }
+      const ideas = TOPIC_SUGGESTIONS.slice(0, 5).join(", ");
+      return `Totally fine. A few ideas: ${ideas}. Which ones sound good?`;
     },
-    [onboardingStep]
+    []
   );
 
   const startListening = React.useCallback(async () => {
@@ -253,13 +325,31 @@ export default function App() {
           }
           const text = data?.text || "";
           if (!text.trim()) {
-            setSpeechError("I couldn't hear that. Try again and speak a little longer.");
+            const message = "I couldn't quite hear that. Please try again in a full sentence.";
+            setSpeechError(message);
+            const now = Date.now();
+            if (now - lastListenPromptRef.current > 2500) {
+              lastListenPromptRef.current = now;
+              await speak(message);
+            }
+            if (onboardingStep === "location" || onboardingStep === "topics") {
+              await startListening();
+            }
             return;
           }
           setTranscript(text);
           applyTranscriptRef.current(text);
         } catch (error) {
-          setSpeechError("Speech recognition failed. Try typing instead.");
+          const message = "Sorry, I couldn't understand that. Could you say it again?";
+          setSpeechError(message);
+          const now = Date.now();
+          if (now - lastListenPromptRef.current > 2500) {
+            lastListenPromptRef.current = now;
+            await speak(message);
+          }
+          if (onboardingStep === "location" || onboardingStep === "topics") {
+            await startListening();
+          }
         } finally {
           stream.getTracks().forEach((track) => track.stop());
         }
@@ -270,13 +360,13 @@ export default function App() {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
         }
-      }, 4500);
+      }, 9000);
     } catch (error) {
       listeningRef.current = false;
       setSpeechError("Microphone access denied.");
       setListening(false);
     }
-  }, []);
+  }, [onboardingStep, speak]);
 
   const stopListening = React.useCallback(() => {
     if (!mediaRecorderRef.current) return;
@@ -288,6 +378,120 @@ export default function App() {
     listeningRef.current = false;
     setListening(false);
   }, []);
+
+  const handleOnboardingResponse = React.useCallback(
+    async (text: string) => {
+      const cleaned = text.trim();
+      if (!cleaned) return;
+      if (listeningRef.current) stopListening();
+      setOnboardingParsing(true);
+      setOnboardingParseError(null);
+      try {
+        if (isUncertainReply(cleaned) && (onboardingStep === "location" || onboardingStep === "topics")) {
+          setOnboardingFollowup(buildSuggestionPrompt(onboardingStep));
+          setOnboardingStep(onboardingStep);
+          setOnboardingParsing(false);
+          return;
+        }
+        const result = await requestOnboardingParse(cleaned);
+        const nextLocation = typeof result.location === "string" ? result.location.trim() : "";
+        const nextTopics = normalizeTopics(result.topics);
+        setDraft((prev) => ({
+          location: nextLocation || prev.location,
+          topics: nextTopics || prev.topics,
+        }));
+        const mergedLocation = nextLocation || draft.location;
+        const mergedTopics = nextTopics || draft.topics;
+        setOnboardingQuery("");
+        if (onboardingStep === "location") {
+          if (!mergedLocation) {
+            const followup =
+              typeof result.followupQuestion === "string" && result.followupQuestion.trim()
+                ? result.followupQuestion.trim()
+                : buildSuggestionPrompt("location");
+            setOnboardingFollowup(followup);
+            setOnboardingStep("location");
+            return;
+          }
+          setOnboardingFollowup(null);
+          setOnboardingStep("topics");
+          return;
+        }
+        if (onboardingStep === "topics") {
+          if (!mergedTopics) {
+            const followup =
+              typeof result.followupQuestion === "string" && result.followupQuestion.trim()
+                ? result.followupQuestion.trim()
+                : buildSuggestionPrompt("topics");
+            setOnboardingFollowup(followup);
+            setOnboardingStep("topics");
+            return;
+          }
+          setOnboardingFollowup(null);
+          setOnboardingStep("confirm");
+          return;
+        }
+        const missing =
+          result.missing && Array.isArray(result.missing)
+            ? result.missing
+            : ([
+                ...(mergedLocation ? [] : (["location"] as OnboardingParseMissing[])),
+                ...(mergedTopics ? [] : (["topics"] as OnboardingParseMissing[])),
+              ] as OnboardingParseMissing[]);
+        if (missing.length === 0) {
+          setOnboardingFollowup(null);
+          setOnboardingStep("confirm");
+          return;
+        }
+        const followup =
+          typeof result.followupQuestion === "string" && result.followupQuestion.trim()
+            ? result.followupQuestion.trim()
+            : buildFollowupQuestion(missing);
+        setOnboardingFollowup(followup);
+        setOnboardingStep(missing.includes("location") ? "location" : "topics");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Onboarding parse failed.";
+        setOnboardingParseError(message);
+      } finally {
+        setOnboardingParsing(false);
+      }
+    },
+    [
+      buildFollowupQuestion,
+      buildSuggestionPrompt,
+      draft.location,
+      draft.topics,
+      isUncertainReply,
+      normalizeTopics,
+      onboardingStep,
+      requestOnboardingParse,
+      stopListening,
+    ]
+  );
+
+  const getOnboardingPrompt = React.useCallback(
+    (step: "intro" | "location" | "topics" | "confirm") => {
+      if (step === "intro") return "I can tailor a daily briefing in two quick questions.";
+      if (step === "confirm") return "Ready to start your personalized briefing.";
+      const defaultPrompt =
+        step === "location"
+          ? "Tell me the region you care about. You can say a city, country, or just global."
+          : "What kinds of news should I follow for you? A few interests is perfect.";
+      if (onboardingFollowup && (step === "location" || step === "topics")) {
+        return onboardingFollowup;
+      }
+      return defaultPrompt;
+    },
+    [onboardingFollowup]
+  );
+
+  const applyTranscript = React.useCallback(
+    (text: string) => {
+      if (!text) return;
+      handleOnboardingResponse(text);
+    },
+    [handleOnboardingResponse]
+  );
 
   React.useEffect(() => {
     listeningRef.current = listening;
@@ -302,23 +506,32 @@ export default function App() {
     setOnboardingStep("intro");
     setTranscript("");
     setSpeechError(null);
+    setOnboardingFollowup(null);
+    setOnboardingParseError(null);
+    setOnboardingQuery("");
   }, [showOnboarding]);
+
+  React.useEffect(() => {
+    setOnboardingQuery("");
+    setOnboardingParseError(null);
+  }, [onboardingStep]);
 
   React.useEffect(() => {
     if (!showOnboarding) return;
     let cancelled = false;
     const run = async () => {
       if (listeningRef.current) stopListening();
+      const prompt = getOnboardingPrompt(onboardingStep);
       if (onboardingStep === "intro") {
         await speak(
           "Welcome to your personal daily news assistant. I will ask a few quick questions to help me understand more about you."
         );
       }
       if (onboardingStep === "location") {
-        await speak("Where should I focus the local news? You can say a city, country, or global.");
+        await speak(prompt);
       }
       if (onboardingStep === "topics") {
-        await speak("What topics should I follow? You can list a few interests.");
+        await speak(prompt);
       }
       if (onboardingStep === "confirm") {
         await speak("Great. I will start the briefing now.");
@@ -332,7 +545,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [onboardingStep, showOnboarding, speak, startListening, stopListening]);
+  }, [getOnboardingPrompt, onboardingStep, showOnboarding, speak, startListening, stopListening]);
 
   React.useEffect(() => {
     appendLog(
@@ -376,6 +589,14 @@ export default function App() {
     saveProfile(nextProfile);
     setShowOnboarding(false);
     await runBrief(nextProfile);
+  }
+
+  function resetOnboarding() {
+    clearProfile();
+    setProfile(null);
+    setDraft({ location: "", topics: "" });
+    setOnboardingStep("intro");
+    setShowOnboarding(true);
   }
 
   async function runBrief(nextProfile: ReaderProfile) {
@@ -463,16 +684,9 @@ export default function App() {
   const availableTags = Array.from(
     new Set(extraStories.flatMap((story) => story.tags ?? []).map((tag) => tag.trim()).filter(Boolean))
   );
-  const locationSuggestions = ["Global", "Malaysia", "Singapore", "United States", "Europe", "Asia"];
-  const topicSuggestions = ["Technology", "Business", "Politics", "Food", "Entertainment", "Sports"];
-  const onboardingPrompt =
-    onboardingStep === "intro"
-      ? "I can tailor a daily briefing in two quick questions."
-      : onboardingStep === "location"
-      ? "Where should I focus local coverage?"
-      : onboardingStep === "topics"
-      ? "What topics should I follow?"
-      : "Ready to start your personalized briefing.";
+  const locationSuggestions = LOCATION_SUGGESTIONS;
+  const topicSuggestions = TOPIC_SUGGESTIONS;
+  const onboardingPrompt = getOnboardingPrompt(onboardingStep);
   const topicsReady = draft.topics.trim().length > 0;
 
   if (showOnboarding) {
@@ -501,6 +715,8 @@ export default function App() {
                 {listening ? "Listening..." : "I will open the mic right after I finish speaking."}
               </p>
               {speechError && <p className="muted">{speechError}</p>}
+              {onboardingParsing && <p className="muted">Working on your answer...</p>}
+              {onboardingParseError && <p className="muted">{onboardingParseError}</p>}
               {transcript && (
                 <div className="orb-transcript">
                   <span className="eyebrow">Heard</span>
@@ -547,17 +763,47 @@ export default function App() {
               {onboardingStep === "location" && (
                 <div className="orb-actions">
                   <div className="field">
+                    <span>In your own words</span>
+                    <textarea
+                      rows={3}
+                      placeholder="Tell me the region and the topics you care about."
+                      value={onboardingQuery}
+                      onChange={(event) => {
+                        setOnboardingParseError(null);
+                        setOnboardingQuery(event.target.value);
+                      }}
+                    />
+                  </div>
+                  <div className="orb-actions__row">
+                    <button
+                      className="button button--ghost"
+                      type="button"
+                      onClick={listening ? stopListening : startListening}
+                    >
+                      {listening ? "Stop listening" : "Speak response"}
+                    </button>
+                    <button
+                      className="button button--paper"
+                      type="button"
+                      onClick={() => handleOnboardingResponse(onboardingQuery)}
+                      disabled={onboardingParsing || !onboardingQuery.trim()}
+                    >
+                      {onboardingParsing ? "Parsing..." : "Send to assistant"}
+                    </button>
+                  </div>
+                  <div className="field">
                     <span>Location focus</span>
                     <input
                       type="text"
                       placeholder="Global, Singapore, Bay Area"
                       value={draft.location}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setOnboardingFollowup(null);
                         setDraft((prev) => ({
                           ...prev,
                           location: event.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </div>
                   <div className="tag-row">
@@ -566,24 +812,21 @@ export default function App() {
                         key={suggestion}
                         type="button"
                         className="chip chip--paper"
-                        onClick={() =>
+                        onClick={() => {
+                          setOnboardingFollowup(null);
                           setDraft((prev) => ({
                             ...prev,
                             location: suggestion,
-                          }))
-                        }
+                          }));
+                        }}
                       >
                         {suggestion}
                       </button>
                     ))}
                   </div>
                   <div className="orb-actions__row">
-                    <button
-                      className="button button--ghost"
-                      type="button"
-                      onClick={listening ? stopListening : startListening}
-                    >
-                      {listening ? "Stop listening" : "Speak location"}
+                    <button className="button button--ghost" type="button" onClick={() => setOnboardingStep("intro")}>
+                      Back
                     </button>
                     <button className="button button--paper" type="button" onClick={() => setOnboardingStep("topics")}>
                       Continue
@@ -594,17 +837,47 @@ export default function App() {
               {onboardingStep === "topics" && (
                 <div className="orb-actions">
                   <div className="field">
+                    <span>In your own words</span>
+                    <textarea
+                      rows={3}
+                      placeholder="Share any extra details about what you want to follow."
+                      value={onboardingQuery}
+                      onChange={(event) => {
+                        setOnboardingParseError(null);
+                        setOnboardingQuery(event.target.value);
+                      }}
+                    />
+                  </div>
+                  <div className="orb-actions__row">
+                    <button
+                      className="button button--ghost"
+                      type="button"
+                      onClick={listening ? stopListening : startListening}
+                    >
+                      {listening ? "Stop listening" : "Speak response"}
+                    </button>
+                    <button
+                      className="button button--paper"
+                      type="button"
+                      onClick={() => handleOnboardingResponse(onboardingQuery)}
+                      disabled={onboardingParsing || !onboardingQuery.trim()}
+                    >
+                      {onboardingParsing ? "Parsing..." : "Send to assistant"}
+                    </button>
+                  </div>
+                  <div className="field">
                     <span>Topics to track</span>
                     <input
                       type="text"
                       placeholder="AI policy, product launches, fintech, consumer tech"
                       value={draft.topics}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setOnboardingFollowup(null);
                         setDraft((prev) => ({
                           ...prev,
                           topics: event.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </div>
                   <div className="tag-row">
@@ -613,12 +886,13 @@ export default function App() {
                         key={suggestion}
                         type="button"
                         className="chip chip--paper"
-                        onClick={() =>
+                        onClick={() => {
+                          setOnboardingFollowup(null);
                           setDraft((prev) => ({
                             ...prev,
                             topics: prev.topics ? `${prev.topics}, ${suggestion}` : suggestion,
-                          }))
-                        }
+                          }));
+                        }}
                       >
                         {suggestion}
                       </button>
@@ -628,9 +902,9 @@ export default function App() {
                     <button
                       className="button button--ghost"
                       type="button"
-                      onClick={listening ? stopListening : startListening}
+                      onClick={() => setOnboardingStep("location")}
                     >
-                      {listening ? "Stop listening" : "Speak topics"}
+                      Back
                     </button>
                     <button
                       className="button button--paper"
@@ -725,15 +999,9 @@ export default function App() {
                 <button
                   className="button button--ghost"
                   type="button"
-                  onClick={() => {
-                    if (profile) {
-                      setDraft(profile);
-                      setOnboardingStep("intro");
-                      setShowOnboarding(true);
-                    }
-                  }}
+                  onClick={resetOnboarding}
                 >
-                  Update topics
+                  Reset
                 </button>
               </div>
             </div>
