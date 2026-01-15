@@ -720,6 +720,11 @@ input[type="text"]::placeholder {
   padding: 8px 12px;
   cursor: pointer;
   font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  justify-self: start;
 }
 
 .tag-row {
