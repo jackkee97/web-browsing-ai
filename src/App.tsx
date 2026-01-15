@@ -212,6 +212,8 @@ export default function App() {
       if (useCachedBrief) {
         const cached = loadCachedBrief();
         if (cached) {
+          runDemoTrace(appendLog);
+          await wait(1400);
           setBrief(cached.summary);
           setStories(cached.items);
           appendLog("Loaded cached briefing from local storage.", "brief");
@@ -219,8 +221,10 @@ export default function App() {
         }
         appendLog("No cached briefing found; running live fetch.", "brief");
       }
-      if (!useManus) {
-        const demo = buildDemoBrief(nextProfile);
+    if (!useManus) {
+      runDemoTrace(appendLog);
+      await wait(2200);
+      const demo = buildDemoBrief(nextProfile);
         setBrief(demo.summary);
         const withImages = await generateAiMedia(demo.items, nextProfile, appendLog);
         setStories(withImages);
@@ -891,6 +895,20 @@ function isImageUrl(url: string) {
 
 function isVideoUrl(url: string) {
   return /\.(mp4|webm|mov)$/i.test(url) || /youtu\.be|youtube\.com|vimeo\.com/i.test(url);
+}
+
+function runDemoTrace(appendLog: (message: string, meta?: string) => void) {
+  const steps = [
+    { delay: 0, meta: "demo", message: "Routing to demo newsroom pipeline." },
+    { delay: 400, meta: "agent", message: "Drafting fast search queries for local, international, and interest topics." },
+    { delay: 800, meta: "web", message: "Scanning fast sources (last 7 days) for headlines." },
+    { delay: 1200, meta: "social", message: "Sampling trending social chatter for drama and sentiment." },
+    { delay: 1600, meta: "editor", message: "Ranking stories by relevance and freshness." },
+    { delay: 2000, meta: "layout", message: "Composing front page and briefs." },
+  ];
+  steps.forEach((step) => {
+    window.setTimeout(() => appendLog(step.message, step.meta), step.delay);
+  });
 }
 
 function getPagedSlice(items: NewsItem[], page: number, totalPages: number) {
