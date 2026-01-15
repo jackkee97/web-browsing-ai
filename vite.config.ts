@@ -64,6 +64,27 @@ export default defineConfig(({ mode }) => {
             res.end(JSON.stringify({ error: "AI image error" }));
           }
         });
+        server.middlewares.use("/manus-file", async (req, res) => {
+          try {
+            const url = new URL(req.url ?? "", "http://localhost");
+            const target = url.searchParams.get("url");
+            if (!target || !/^https?:\/\//i.test(target)) {
+              res.statusCode = 400;
+              res.end("Invalid url");
+              return;
+            }
+            const response = await fetch(target, {
+              headers: { "User-Agent": "Mozilla/5.0" },
+            });
+            const text = await response.text();
+            res.setHeader("Content-Type", "text/plain; charset=utf-8");
+            res.statusCode = response.ok ? 200 : response.status;
+            res.end(text);
+          } catch (error) {
+            res.statusCode = 500;
+            res.end("File proxy error");
+          }
+        });
       },
     },
   ],

@@ -43,6 +43,7 @@ const DEFAULT_MANUS_SYSTEM_PROMPT =
 const DEFAULT_MANUS_POLL_INTERVAL = 2000;
 const DEFAULT_MANUS_MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes
 const PROFILE_STORAGE_KEY = "manus.reader.profile";
+const CACHE_STORAGE_KEY = "manus.news.cache";
 const NEWS_MEDIA_PER_PAGE = 2;
 const NEWS_TEXT_PER_PAGE = 3;
 
@@ -96,6 +97,26 @@ function saveProfile(profile: ReaderProfile) {
   window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
 }
 
+function loadCachedBrief(): { summary: string; items: NewsItem[] } | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(CACHE_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.summary === "string" && Array.isArray(parsed?.items)) {
+      return { summary: parsed.summary, items: parsed.items };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function saveCachedBrief(payload: { summary: string; items: NewsItem[]; updatedAt: string }) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(payload));
+}
+
 export default function App() {
   const manusConfig = useManusConfig();
   const useManus = manusConfig.enabled && !!manusConfig.key;
@@ -116,6 +137,7 @@ export default function App() {
     status: "idle",
     messages: [],
   });
+  const useCachedBrief = import.meta.env.VITE_DEMO_MODE === "true";
 
   const startRef = React.useRef<number | null>(null);
 
@@ -187,11 +209,22 @@ export default function App() {
     setManusProgress({ status: useManus ? "running" : "demo", messages: [] });
     appendLog(`Building brief for ${nextProfile.topics}.`, "brief");
     try {
+      if (useCachedBrief) {
+        const cached = loadCachedBrief();
+        if (cached) {
+          setBrief(cached.summary);
+          setStories(cached.items);
+          appendLog("Loaded cached briefing from local storage.", "brief");
+          return;
+        }
+        appendLog("No cached briefing found; running live fetch.", "brief");
+      }
       if (!useManus) {
         const demo = buildDemoBrief(nextProfile);
         setBrief(demo.summary);
         const withImages = await generateAiMedia(demo.items, nextProfile, appendLog);
         setStories(withImages);
+        saveCachedBrief({ summary: demo.summary, items: withImages, updatedAt: new Date().toISOString() });
         appendLog("Generated demo brief locally.", "demo");
         return;
       }
@@ -213,10 +246,12 @@ export default function App() {
         }
       );
 
-      const parsed = parseNewsText(extractManusText(taskResult));
+      const fileText = await fetchManusOutputFile(taskResult, appendLog);
+      const parsed = parseNewsText(fileText || extractManusText(taskResult));
       setBrief(parsed.summary);
       const withImages = await generateAiMedia(parsed.items, nextProfile, appendLog);
       setStories(withImages);
+      saveCachedBrief({ summary: parsed.summary, items: withImages, updatedAt: new Date().toISOString() });
       setManusProgress({
         status: taskResult.status || "completed",
         taskId: taskResult.id,
@@ -614,6 +649,31 @@ function extractManusText(task: any) {
     .map((c: any) => c?.text)
     .filter(Boolean)
     .join("\n\n");
+}
+
+async function fetchManusOutputFile(task: any, appendLog: (message: string, meta?: string) => void) {
+  const outputs: any[] = task?.output || [];
+  const fileUrl = outputs
+    .flatMap((o) => o?.content || [])
+    .map((c: any) => c?.fileUrl)
+    .find(Boolean);
+
+  if (!fileUrl) return "";
+
+  try {
+    const target = import.meta.env.DEV ? `/manus-file?url=${encodeURIComponent(fileUrl)}` : fileUrl;
+    const res = await fetch(target);
+    if (!res.ok) {
+      appendLog(`Failed to fetch Manus file (${res.status})`, "manus");
+      return "";
+    }
+    const text = await res.text();
+    return text;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown file fetch error";
+    appendLog(`Manus file fetch error (${message})`, "manus");
+    return "";
+  }
 }
 
 function extractManusMessages(task: any): { id: string; role: string; text: string }[] {

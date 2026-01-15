@@ -26,6 +26,7 @@ cp .env.example .env.local
 ## Env vars
 Set these in `.env.local` (not committed):
 - `VITE_MANUS_API_KEY` – Manus API key (omit to stay in demo mode)
+- `VITE_DEMO_MODE` – set to `true` to load the last briefing from local storage
 - `OPENAI_API_KEY` – OpenAI key for AI-generated story images (required to render media)
 In dev, requests are proxied through `/manus` to avoid CORS; production uses `https://api.manus.ai` directly.
 
