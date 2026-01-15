@@ -526,9 +526,6 @@ export default function App() {
         await speak("Great. I will start the briefing now.");
       }
       if (cancelled) return;
-      if ((onboardingStep === "location" || onboardingStep === "topics") && !listeningRef.current) {
-        await startListening();
-      }
     };
     run();
     return () => {
