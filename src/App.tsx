@@ -705,9 +705,13 @@ export default function App() {
           <section className="panel panel--wide panel--paper">
             <div className="panel__header panel__header--tight">
               <div>
-                <p className="eyebrow">Front page</p>
-                <h3>Your personalized edition</h3>
-                <p className="muted">Pulling signals from social chatter and community discussion.</p>
+                <p className="eyebrow">{safePage === 1 ? "Front page" : `Page ${safePage}`}</p>
+                <h3>{safePage === 1 ? "Your personalized edition" : "More stories"}</h3>
+                <p className="muted">
+                  {safePage === 1
+                    ? "Pulling signals from social chatter and community discussion."
+                    : "Continuing your personalized briefing."}
+                </p>
               </div>
               <div className="panel__actions">
                 <button
