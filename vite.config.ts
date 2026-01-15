@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => {
                 size: "1024x1024",
               }),
             });
-            const data = await response.json();
+            const data = (await response.json()) as Record<string, any>;
             const url = data?.data?.[0]?.url;
             res.setHeader("Content-Type", "application/json; charset=utf-8");
             res.statusCode = response.ok && url ? 200 : 500;
@@ -119,7 +119,7 @@ export default defineConfig(({ mode }) => {
                 ],
               }),
             });
-            const data = await response.json().catch(() => ({}));
+            const data = (await response.json().catch(() => ({}))) as Record<string, any>;
             const content = data?.choices?.[0]?.message?.content || "{}";
             let parsedContent = {};
             try {
@@ -198,7 +198,7 @@ export default defineConfig(({ mode }) => {
               }),
             });
             if (!response.ok) {
-              const data = await response.json().catch(() => ({}));
+              const data = (await response.json().catch(() => ({}))) as Record<string, any>;
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json; charset=utf-8");
               res.end(JSON.stringify({ error: data?.detail || "TTS failed" }));
@@ -241,7 +241,7 @@ export default defineConfig(({ mode }) => {
               },
               body: Buffer.concat(chunks),
             });
-            const data = await response.json().catch(() => ({}));
+            const data = (await response.json().catch(() => ({}))) as Record<string, any>;
             if (!response.ok) {
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json; charset=utf-8");

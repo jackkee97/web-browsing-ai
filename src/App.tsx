@@ -1,17 +1,10 @@
-import React from "react";
+import * as React from "react";
 
 type LogLine = {
   id: string;
   ts: string;
   meta: string;
   message: string;
-};
-
-type ManusProgress = {
-  status: string;
-  taskId?: string;
-  taskUrl?: string;
-  messages: { id: string; role: string; text: string }[];
 };
 
 type ReaderProfile = {
@@ -150,10 +143,6 @@ export default function App() {
   const [logs, setLogs] = React.useState<LogLine[]>([]);
   const [page, setPage] = React.useState(1);
   const [activeTag, setActiveTag] = React.useState<string | null>(null);
-  const [manusProgress, setManusProgress] = React.useState<ManusProgress>({
-    status: "idle",
-    messages: [],
-  });
   const useCachedBrief = import.meta.env.VITE_USE_CACHED_BRIEF === "true";
   const [onboardingStep, setOnboardingStep] = React.useState<"intro" | "location" | "topics" | "confirm">("intro");
   const [listening, setListening] = React.useState(false);
@@ -330,7 +319,7 @@ export default function App() {
             const now = Date.now();
             if (now - lastListenPromptRef.current > 2500) {
               lastListenPromptRef.current = now;
-              await speak(message);
+              void speak(message);
             }
             if (onboardingStep === "location" || onboardingStep === "topics") {
               await startListening();
@@ -339,13 +328,13 @@ export default function App() {
           }
           setTranscript(text);
           applyTranscriptRef.current(text);
-        } catch (error) {
+        } catch {
           const message = "Sorry, I couldn't understand that. Could you say it again?";
           setSpeechError(message);
           const now = Date.now();
           if (now - lastListenPromptRef.current > 2500) {
             lastListenPromptRef.current = now;
-            await speak(message);
+            void speak(message);
           }
           if (onboardingStep === "location" || onboardingStep === "topics") {
             await startListening();
@@ -361,7 +350,7 @@ export default function App() {
           mediaRecorderRef.current.stop();
         }
       }, 9000);
-    } catch (error) {
+    } catch {
       listeningRef.current = false;
       setSpeechError("Microphone access denied.");
       setListening(false);
@@ -528,10 +517,10 @@ export default function App() {
         );
       }
       if (onboardingStep === "location") {
-        await speak(prompt);
+        void speak(prompt);
       }
       if (onboardingStep === "topics") {
-        await speak(prompt);
+        void speak(prompt);
       }
       if (onboardingStep === "confirm") {
         await speak("Great. I will start the briefing now.");
@@ -607,7 +596,6 @@ export default function App() {
     setPage(1);
     setRunning(true);
     startRef.current = Date.now();
-    setManusProgress({ status: useManus ? "running" : "demo", messages: [] });
     appendLog(`Building brief for ${nextProfile.topics}.`, "brief");
     try {
       if (useCachedBrief) {
@@ -642,12 +630,6 @@ export default function App() {
           const parsed = parseNewsText(extractManusText(partial));
           if (parsed.summary) setBrief(parsed.summary);
           if (parsed.items.length) setStories(parsed.items);
-          setManusProgress({
-            status: partial.status || "running",
-            taskId: partial.id,
-            taskUrl: partial.metadata?.task_url || partial.metadata?.taskUrl,
-            messages: extractManusMessages(partial),
-          });
         }
       );
 
@@ -657,12 +639,6 @@ export default function App() {
       const withImages = await generateAiMedia(parsed.items, nextProfile, appendLog);
       setStories(withImages);
       saveCachedBrief({ summary: parsed.summary, items: withImages, updatedAt: new Date().toISOString() });
-      setManusProgress({
-        status: taskResult.status || "completed",
-        taskId: taskResult.id,
-        taskUrl: taskResult.metadata?.task_url || taskResult.metadata?.taskUrl,
-        messages: extractManusMessages(taskResult),
-      });
       appendLog("Manus brief ready.", "manus");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown Manus error";
@@ -682,7 +658,7 @@ export default function App() {
   const pageStart = (safePage - 1) * NEWS_PAGE_SIZE;
   const pagedStories = visibleStories.slice(pageStart, pageStart + NEWS_PAGE_SIZE);
   const availableTags = Array.from(
-    new Set(extraStories.flatMap((story) => story.tags ?? []).map((tag) => tag.trim()).filter(Boolean))
+    new Set<string>(extraStories.flatMap((story) => story.tags ?? []).map((tag) => tag.trim()).filter(Boolean))
   );
   const locationSuggestions = LOCATION_SUGGESTIONS;
   const topicSuggestions = TOPIC_SUGGESTIONS;
@@ -750,7 +726,7 @@ export default function App() {
             </div>
             <div className="orb-content">
               {onboardingStep === "intro" && (
-                <div className="orb-actions">
+                <div className="orb-actions orb-actions--intro">
                   <button
                     className="button button--paper"
                     type="button"
@@ -1005,6 +981,12 @@ export default function App() {
                 </button>
               </div>
             </div>
+            {brief && safePage === 1 && !running && (
+              <div className="front-summary">
+                <span className="front-summary__label">Front summary</span>
+                {renderMarkdown(brief)}
+              </div>
+            )}
 
             {running && <p className="muted">Composing your front page... sit tight.</p>}
 
@@ -1243,18 +1225,6 @@ async function fetchManusOutputFile(task: any, appendLog: (message: string, meta
   }
 }
 
-function extractManusMessages(task: any): { id: string; role: string; text: string }[] {
-  const outputs: any[] = task?.output || [];
-  return outputs.map((o) => {
-    const text = (o?.content || [])
-      .map((c: any) => c?.text)
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    return { id: o?.id || Math.random().toString(), role: o?.role || "message", text };
-  });
-}
-
 function parseNewsText(text: string): { summary: string; items: NewsItem[] } {
   if (!text) return { summary: "", items: [] };
   const lines = text
@@ -1336,7 +1306,7 @@ function parseNewsBullet(line: string): NewsItem | null {
 
 function buildNewsPrompt(profile: ReaderProfile, manusConfig: ReturnType<typeof useManusConfig>) {
   const locationLine = profile.location ? `Location: ${profile.location}.` : "Location: Global.";
-  return `${manusConfig.systemPrompt}\n\nYou are preparing a newspaper platform daily briefing. Search fast and shallow, prioritizing speed over depth.\n${locationLine}\nUser interests: ${profile.topics}.\n\nCoverage requirements:\n- Local news (based on location)\n- International news\n- User interest topics\n- Social drama and trending chatter (especially from social media)\n- Only include items from the past 7 days\n- Order items from best match to least relevant\n\nReturn:\n1) A 2-3 sentence front-page summary.\n2) 12-18 bullet items formatted as \"- [Title](URL) - category label (Local/International/Interest/Social) + one-sentence summary.\"\n3) Optional tags: add bracketed tags after the category (example: \"Local [Technology, Policy] - ...\").\nPrefer credible, recent sources with direct links so readers can open them.`;
+  return `${manusConfig.systemPrompt}\n\nYou are preparing a newspaper platform daily briefing. Search fast and shallow, prioritizing speed over depth.\n${locationLine}\nUser interests: ${profile.topics}.\n\nCoverage requirements:\n- Local news (based on location)\n- International news\n- User interest topics\n- Social drama and trending chatter (especially from social media)\n- Only include items from the past 7 days\n- Order items from best match to least relevant\n\nReturn:\n1) A 2-3 sentence front-page summary.\n2) 12-18 bullet items formatted as "- [Title](URL) - category label (Local/International/Interest/Social) + one-sentence summary."\n3) Optional tags: add bracketed tags after the category (example: "Local [Technology, Policy] - ...").\nPrefer credible, recent sources with direct links so readers can open them.`;
 }
 
 function buildDemoBrief(profile: ReaderProfile): { summary: string; items: NewsItem[] } {
@@ -1347,7 +1317,7 @@ function buildDemoBrief(profile: ReaderProfile): { summary: string; items: NewsI
   const summary = `Tracking ${topics.slice(0, 3).join(", ") || "your topics"} with a social-first lens. Local context: ${
     profile.location || "global"
   }.`;
-  const items = topics.slice(0, 6).map((topic, index) => ({
+  const items: NewsItem[] = topics.slice(0, 6).map((topic, index) => ({
     title: `${topic} watch`,
     summary: `Early chatter highlights emerging themes and differing opinions in ${topic}.`,
     url: index === 0 ? "https://news.ycombinator.com" : undefined,
@@ -1424,13 +1394,6 @@ function runDemoTrace(appendLog: (message: string, meta?: string) => void) {
   steps.forEach((step) => {
     window.setTimeout(() => appendLog(step.message, step.meta), step.delay);
   });
-}
-
-function getPagedSlice(items: NewsItem[], page: number, totalPages: number) {
-  if (items.length === 0) return [];
-  const start = Math.floor(((page - 1) * items.length) / totalPages);
-  const end = Math.floor((page * items.length) / totalPages);
-  return items.slice(start, end);
 }
 
 async function generateAiMedia(
